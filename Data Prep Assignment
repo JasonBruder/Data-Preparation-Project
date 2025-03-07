@@ -1,0 +1,103 @@
+# Install and load necessary packages
+library(readxl)
+library(dplyr)
+library(ggplot2)
+
+# Read the Excel file
+file_path <- "C:/Users/jason.bruder/Downloads/presidential_polls_2020.xlsx"
+sheet1 <- read_excel(file_path, sheet = 1, col_types = "text")
+sheet2 <- read_excel(file_path, sheet = 2, col_types = "text")
+
+# Combine the two sheets into one dataset
+combined_data <- bind_rows(sheet1, sheet2)
+
+# Convert columns to appropriate data types
+converted_data <- combined_data %>%
+  mutate(
+    cycle = as.integer(cycle),
+    state = as.character(state),
+    modeldate = as.Date(as.numeric(modeldate), origin = "1899-12-30"),
+    candidate_name = as.character(candidate_name),
+    startdate = as.Date(as.numeric(startdate), origin = "1899-12-30"),
+    enddate = as.Date(as.numeric(enddate), origin = "1899-12-30"),
+    pollster = as.character(pollster),
+    samplesize = as.integer(samplesize),
+    population = toupper(as.character(population)),
+    weight = as.numeric(weight),
+    influence = as.numeric(influence),
+    pct = as.numeric(pct),
+    house_adjusted_pct = as.numeric(house_adjusted_pct),
+    trend_and_house_adjusted_pct = as.numeric(trend_and_house_adjusted_pct),
+    poll_id = as.character(poll_id),
+    question_id = as.character(question_id)
+  )
+
+# Remove rows with all NA values
+cleaned_data <- converted_data %>%
+  filter(rowSums(is.na(.)) != ncol(.))
+
+# Dictionary to map state names to abbreviations
+state_abbreviations <- c(
+  "Alabama" = "AL", "Alaska" = "AK", "Arizona" = "AZ", "Arkansas" = "AR", "California" = "CA",
+  "Colorado" = "CO", "Connecticut" = "CT", "Delaware" = "DE", "Florida" = "FL", "Georgia" = "GA",
+  "Hawaii" = "HI", "Idaho" = "ID", "Illinois" = "IL", "Indiana" = "IN", "Iowa" = "IA",
+  "Kansas" = "KS", "Kentucky" = "KY", "Louisiana" = "LA", "Maine" = "ME", "Maryland" = "MD",
+  "Massachusetts" = "MA", "Michigan" = "MI", "Minnesota" = "MN", "Mississippi" = "MS",
+  "Missouri" = "MO", "Montana" = "MT", "Nebraska" = "NE", "Nevada" = "NV", 
+  "New Hampshire" = "NH", "New Jersey" = "NJ", "New Mexico" = "NM", "New York" = "NY",
+  "North Carolina" = "NC", "North Dakota" = "ND", "Ohio" = "OH", "Oklahoma" = "OK",
+  "Oregon" = "OR", "Pennsylvania" = "PA", "Rhode Island" = "RI", "South Carolina" = "SC",
+  "South Dakota" = "SD", "Tennessee" = "TN", "Texas" = "TX", "Utah" = "UT",
+  "Vermont" = "VT", "Virginia" = "VA", "Washington" = "WA", "West Virginia" = "WV",
+  "Wisconsin" = "WI", "Wyoming" = "WY"
+)
+
+# Convert state names to abbreviations
+abbreviated_data <- cleaned_data %>%
+  mutate(state = ifelse(state %in% names(state_abbreviations), state_abbreviations[state], state))
+
+# Fill missing values with the average of each column for numeric data
+filled_data <- abbreviated_data %>%
+  mutate(across(where(is.numeric), ~ ifelse(is.na(.), mean(., na.rm = TRUE), .)))
+
+# Remove the tracking column
+final_data <- filled_data %>%
+  select(-tracking)
+
+# Replace "Biden" with "Joseph R. Biden Jr." in the candidate_name column
+final_data <- final_data %>%
+  mutate(candidate_name = ifelse(candidate_name == "Biden", "Joseph R. Biden Jr.", candidate_name))
+
+# Change "20" to "2020" in the cycle column
+final_data <- final_data %>%
+  mutate(cycle = ifelse(cycle == "20", "2020", cycle))
+
+# Function to calculate the mode
+calculate_mode <- function(x) {
+  uniq_x <- unique(x)
+  uniq_x[which.max(tabulate(match(x, uniq_x)))]
+}
+
+# Replace NA values with the mode of each column for non-numeric data
+final_data <- final_data %>%
+  mutate(across(where(is.character), ~ ifelse(is.na(.), calculate_mode(.), .)))
+
+# View the first few rows of the final cleaned data
+head(final_data)
+
+# Plot 1: House Adjusted Percentage grouped by State
+ggplot(final_data, aes(x = state, y = house_adjusted_pct)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  labs(title = "House Adjusted Percentage by State", x = "State", y = "House Adjusted Percentage") +
+  theme_minimal()
+
+# Plot 2: Number of Polls Conducted by State (Pie Chart)
+polls_by_state <- final_data %>%
+  count(state)
+
+ggplot(polls_by_state, aes(x = "", y = n, fill = state)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar("y") +
+  labs(title = "Number of Polls Conducted by State", x = "", y = "") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(), axis.ticks = element_blank(), panel.grid = element_blank())
